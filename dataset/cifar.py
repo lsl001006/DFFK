@@ -1,18 +1,16 @@
 import pickle
-import os
-import numpy as np
+import os 
+import numpy as np 
 from PIL import Image
 import logging
-from torchvision import transforms, datasets
+from torchvision import transforms,datasets
 from sklearn.model_selection import StratifiedShuffleSplit
 from torch.utils.data import DataLoader
 
-import sys
-
+import sys 
 sys.path.append("..")
 import utils.utils as utils
 import config
-
 
 class myImageFolder(datasets.ImageFolder):
     def __getitem__(self, index):
@@ -25,18 +23,16 @@ class myImageFolder(datasets.ImageFolder):
 
         return sample, target, index
 
-
 def build_distillloader(publictype, online=True):
-    # public cifar100
-    if publictype == 'cifar100':
-        public_dataset = Cifar_Dataset(
-            os.path.join(config.DATAPATH, 'cifar-100-python/'), publictype, train=True, verbose=False, distill=True,
-            aug=online, public_percent=public_percent)
-    elif publictype == 'imagenet':
+    #public cifar100
+    if publictype== 'cifar100':
+        public_dataset = Cifar_Dataset( 
+            os.path.join(config.DATAPATH, 'cifar-100-python/'), publictype, train=True, verbose=False, distill = True, aug=online, public_percent=public_percent)
+    elif publictype== 'imagenet':
         public_dataset = myImageFolder(
             os.path.join(config.DATAPATH, 'imagenet/train/'),
             transforms.Compose([
-                transforms.RandomResizedCrop(32),  # 224
+                transforms.RandomResizedCrop(32), #224
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406],
@@ -46,32 +42,31 @@ def build_distillloader(publictype, online=True):
         # public_data = public_dataset.imgs
     # import ipdb; ipdb.set_trace()
     distill_loader = DataLoader(
-        dataset=public_dataset, batch_size=config.DIS_BATCHSIZE, shuffle=online,
-        num_workers=config.NUM_WORKERS, pin_memory=True, sampler=None)
+            dataset=public_dataset, batch_size=config.DIS_BATCHSIZE, shuffle=online, 
+            num_workers=config.NUM_WORKERS, pin_memory=True, sampler=None)
     return public_dataset, distill_loader
-
 
 def dirichlet_datasplit(args, privtype='cifar10'):
     datapath = os.path.expanduser(config.DATAPATH)
-    N_parties = config.N_PARTIES
-    # private
-    if privtype == 'cifar10':
+    N_parties= config.N_PARTIES
+    #private
+    if privtype=='cifar10':
         subpath = 'cifar-10-batches-py/'
         N_class = 10
-    elif privtype == 'cifar100':
+    elif privtype=='cifar100':
         subpath = 'cifar-100-python/'
         N_class = 100
-    splitname = f'{config.DATAPATH}/splitfile/{privtype}/{args.alpha}_{args.seed}.npy'
+    splitname = f'{config.DATAPATH}/splitfile/{privtype}/{args.alpha}_{args.seed}_{N_parties}.npy'
     if os.path.exists(splitname):
-        split_arr = np.load(splitname)
+        split_arr  =  np.load(splitname)
         assert split_arr.shape == (N_class, N_parties)
     else:
-        split_arr = np.random.dirichlet([args.alpha] * N_parties, N_class)  # nclass*N_parties
+        split_arr = np.random.dirichlet([args.alpha]*N_parties, N_class)#nclass*N_parties
         np.save(splitname, split_arr)
-
+    
     test_dataset = Cifar_Dataset(
         os.path.join(datapath, subpath), privtype, train=False, verbose=False)
-    train_dataset = Cifar_Dataset(
+    train_dataset = Cifar_Dataset( 
         os.path.join(datapath, subpath), privtype, train=True, verbose=False)
     train_x, train_y = train_dataset.img, train_dataset.gt
     priv_data = [None] * N_parties
@@ -80,10 +75,10 @@ def dirichlet_datasplit(args, privtype='cifar10'):
         totaln = idx.shape[0]
         idx_start = 0
         for i in range(N_parties):
-            if i == N_parties - 1:
+            if i==N_parties-1:
                 cur_idx = idx[idx_start:]
             else:
-                idx_end = idx_start + int(split_arr[cls_idx][i] * totaln)
+                idx_end = idx_start + int(split_arr[cls_idx][i]*totaln)
                 cur_idx = idx[idx_start: idx_end]
                 idx_start = idx_end
             if cur_idx == ():
@@ -94,7 +89,6 @@ def dirichlet_datasplit(args, privtype='cifar10'):
                 priv_data[i]['y'] = train_y[cur_idx]
                 priv_data[i]['idx'] = cur_idx
             else:
-                # np.r_即按行连接两个矩阵，priv_data同cur_idx横向合并
                 priv_data[i]['idx'] = np.r_[(priv_data[i]['idx'], cur_idx)]
                 priv_data[i]['x'] = np.r_[(priv_data[i]['x'], train_x[cur_idx])]
                 priv_data[i]['y'] = np.r_[(priv_data[i]['y'], train_y[cur_idx])]
@@ -103,10 +97,8 @@ def dirichlet_datasplit(args, privtype='cifar10'):
     all_priv_data['y'] = train_y
     return priv_data, train_dataset, test_dataset
 
-
 class Cifar_Dataset:
-    def __init__(self, local_dir, data_type, train=True, with_coarse_label=False, verbose=False, distill=False,
-                 aug=True, public_percent=1):
+    def __init__(self, local_dir, data_type, train=True, with_coarse_label=False, verbose=False, distill=False, aug=True, public_percent=1):
         self.distill = distill
         if data_type == 'cifar10':
             if train == True:
@@ -171,26 +163,26 @@ class Cifar_Dataset:
         self.gt = np.asarray(gt)
         total_N_img = img.shape[0]
         # import ipdb; ipdb.set_trace()
-        if public_percent < 1:
-            total_N_img = int(total_N_img * public_percent)
+        if public_percent<1:
+            total_N_img = int(total_N_img*public_percent)
             self.img = self.img[:total_N_img]
             self.gt = self.gt[:total_N_img]
             logging.info(f'Clip with {public_percent}, to {total_N_img}')
         self.fixid = np.arange(total_N_img)
         self.aug = aug
         self.train = train
-
+        
         self.train_transformer = transforms.Compose([
             transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-            # TODO utils.Cutout(16),
-        ])
-
+            #TODO utils.Cutout(16),
+            ])
+        
         self.test_transformer = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.201))])
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.201))])
 
     def __len__(self):
         return self.img.shape[0]
@@ -202,9 +194,9 @@ class Cifar_Dataset:
         # transimage = Image.fromarray(image.transpose(1,2,0).astype('uint8'))
         # transimage = transforms.ToPILImage()(transimage)
         transimage = Image.fromarray(image)
-
+        
         if self.train and self.aug:
-            transformer = self.train_transformer
+            transformer = self.train_transformer 
         else:
             transformer = self.test_transformer
         transimage = transformer(transimage)
@@ -222,24 +214,23 @@ class Dataset_fromarray(Cifar_Dataset):
         self.fixid = np.arange(self.img.shape[0])
         self.multitrans = multitrans
         self.train = train
-
+        
         self.train_transformer = transforms.Compose([
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-            utils.Cutout(16),
-        ])
-
+                transforms.RandomCrop(32, padding=4),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+                # utils.Cutout(16),
+                ])
+        
         self.test_transformer = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.201))])
+                 transforms.ToTensor(),
+                 transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.201))])
         # self.transformer2= transforms.Compose(self.transformer.transforms[:-1]) #if multi, no cutout
         if verbose == True:
             logging.info(f'img shape: {self.img.shape}')
             logging.info(f'label shape: {self.gt.shape}')
         self.aug = aug
-
 
 def generate_alignment_data(data_set, N_alignment=3000):
     X, y = data_set['x'], data_set['y']
@@ -272,7 +263,7 @@ def cifar_fd_data(train_data, N_class, N_parties, N_samples_per_class):
         idx = np.where(train_y == cls_idx)[0]
         priv_idx = idx[:private_n]
         all_priv_idx = np.r_[(all_priv_idx, priv_idx)]
-        public_idx = idx[private_n:]  # rest
+        public_idx = idx[private_n:] #rest
         all_publ_idx = np.r_[(all_publ_idx, public_idx)]
         for i in range(N_parties):
             idx_tmp = priv_idx[i * N_samples_per_class:(i + 1) * N_samples_per_class]
@@ -296,3 +287,5 @@ def cifar_fd_data(train_data, N_class, N_parties, N_samples_per_class):
     public_data['x'] = train_x[all_publ_idx]
     public_data['y'] = train_y[all_publ_idx]
     return (priv_data, total_priv_data, public_data)
+
+
